@@ -7,7 +7,7 @@ A DBMS mini project built with MySQL, Node.js/Express, and React. It organises n
 - **B S Sharath Chandra Reddy** — PES2UG24CS630
 - **R Sai Pranav Reddy** — PES2UG24CS651
 - **Section:** K
-- **Course:** UE23CS351A – DBMS Project
+- **Course:** UE24CS351A – DBMS Project
 - **Guide:** Dr. Shilpa S, Assistant Professor, PES University
 
 ## Features

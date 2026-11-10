@@ -1,8 +1,14 @@
 import { AlertTriangle, MapPin, RefreshCw, Search, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { SeverityBadge, StatusBadge } from '../components/StatusBadge'
-import { fetchOutageDetails, fetchOutages } from '../services/api'
+import {
+  fetchOutageDetails,
+  fetchOutages,
+  updateOutageStatus,
+} from '../services/api'
 import useAutoRefresh from '../hooks/useAutoRefresh'
+import useAuth from '../contexts/useAuth'
 
 const numberFormatter = new Intl.NumberFormat('en-US')
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -177,14 +183,21 @@ function OutageDetails({ outageId, onClose, refreshVersion }) {
 }
 
 export default function OutagesPage({ onRefreshState }) {
+  const route = useLocation()
+  const createdOutage = route.state?.createdOutage
   const [outages, setOutages] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [severity, setSeverity] = useState('')
   const [status, setStatus] = useState('')
-  const [selectedOutageId, setSelectedOutageId] = useState(null)
+  const [selectedOutageId, setSelectedOutageId] = useState(
+    () => createdOutage?.outageId == null ? null : Number(createdOutage.outageId),
+  )
   const [detailRefreshVersion, setDetailRefreshVersion] = useState(0)
+  const [statusError, setStatusError] = useState('')
+  const [updatingOutageId, setUpdatingOutageId] = useState(null)
+  const { user } = useAuth()
   const requestId = useRef(0)
 
   const loadData = useCallback(async () => {
@@ -207,6 +220,23 @@ export default function OutagesPage({ onRefreshState }) {
   }, [])
 
   const { refresh, lastSuccessfulAt } = useAutoRefresh(loadData)
+
+  const handleStatusUpdate = async (outage) => {
+    setStatusError('')
+    setUpdatingOutageId(outage.outageId)
+    const newStatus = outage.status?.toUpperCase() === 'ONGOING' ? 'RESOLVED' : 'ONGOING'
+    try {
+      await updateOutageStatus(outage.outageId, newStatus)
+      setOutages((current) => current.map((item) => (
+        item.outageId === outage.outageId ? { ...item, status: newStatus } : item
+      )))
+      await refresh()
+    } catch (requestError) {
+      setStatusError(getRequestErrorMessage(requestError))
+    } finally {
+      setUpdatingOutageId(null)
+    }
+  }
 
   useEffect(() => {
     onRefreshState?.(refresh, loading, lastSuccessfulAt)
@@ -270,6 +300,13 @@ export default function OutagesPage({ onRefreshState }) {
   return (
     <div className="outage-page">
       {error && <div className="inline-error" role="alert">{error}</div>}
+      {statusError && <div className="inline-error" role="alert">{statusError}</div>}
+      {createdOutage && (
+        <div className="inline-success" role="status">
+          OUT-{String(createdOutage.outageId).padStart(4, '0')} was saved and loaded from the database.{' '}
+          <Link to="/locations" state={{ createdOutage }}>View location totals</Link>
+        </div>
+      )}
       <section aria-label="Outage search and filters" className="panel outage-controls">
         <label className="outage-search">
           <Search aria-hidden="true" size={17} />
@@ -342,6 +379,18 @@ export default function OutagesPage({ onRefreshState }) {
                   <span><MapPin size={13} /> {outage.locationName} · {outage.region}</span>
                   <span>Detected {formatWallClock(outage.detectedAt)}</span>
                 </div>
+                {user && (
+                  <button
+                    className="outage-status-action"
+                    disabled={updatingOutageId === outage.outageId}
+                    onClick={() => handleStatusUpdate(outage)}
+                    type="button"
+                  >
+                    {updatingOutageId === outage.outageId
+                      ? 'Updating…'
+                      : outage.status?.toUpperCase() === 'ONGOING' ? 'Mark resolved' : 'Reopen outage'}
+                  </button>
+                )}
                 <button
                   aria-pressed={selectedOutageId === outage.outageId}
                   className="outage-details-button"

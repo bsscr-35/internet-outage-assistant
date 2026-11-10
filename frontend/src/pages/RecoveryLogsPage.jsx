@@ -162,7 +162,8 @@ export default function RecoveryLogsPage({ onRefreshState }) {
                   <th>ASSIGNED TECHNICIAN</th>
                   <th>STARTED</th>
                   <th>COMPLETED</th>
-                  <th>STATUS</th>
+                  <th>LOG STATUS</th>
+                  <th>ACTION STATUS</th>
                   <th>REMARKS</th>
                 </tr>
               </thead>
@@ -170,11 +171,12 @@ export default function RecoveryLogsPage({ onRefreshState }) {
                 {filteredLogs.map((log) => (
                   <tr key={log.recoveryId}>
                     <td>#{log.recoveryId}</td>
-                    <td><strong>{log.actionType || `Action #${log.actionId}`}</strong><small>Action #{log.actionId} · Outage #{log.outageId}</small></td>
+                    <td><strong>{log.actionType || `Action #${log.actionId}`}</strong><small>Action #{log.actionId} · OUT-{String(log.outageId).padStart(4, '0')} · {log.componentName} · {log.locationName}, {log.region}</small></td>
                     <td>{log.assignedTo || 'Unassigned'}</td>
                     <td>{formatDatabaseDateTime(log.startedAt)}</td>
                     <td>{formatDatabaseDateTime(log.completedAt)}</td>
                     <td><StatusBadge status={log.status} /></td>
+                    <td><StatusBadge status={log.actionStatus} /></td>
                     <td className="recovery-log-remarks">{log.remarks || '—'}</td>
                   </tr>
                 ))}

@@ -1,39 +1,123 @@
 import { AlertTriangle, Activity, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SeverityBadge, StatusBadge } from '../components/StatusBadge'
-import { fetchRecoveryActions, fetchRecoveryLogs, fetchRecoveryStatusAudit } from '../services/api'
+import {
+  createRecoveryAction,
+  fetchOutages,
+  fetchRecoveryActionsForOutage,
+  fetchRecoveryLogs,
+  fetchRecoveryStatusAudit,
+  updateRecoveryActionStatus,
+} from '../services/api'
 import formatDatabaseDateTime from '../utils/formatDatabaseDateTime'
 import useAutoRefresh from '../hooks/useAutoRefresh'
+import useAuth from '../contexts/useAuth'
 
-function getRequestErrorMessage(requestError) {
-  const detail = requestError.response?.data?.message || requestError.message
-  return `Unable to retrieve recovery data from the backend. ${detail}`
+function getLocalDateTimeValue() {
+  const now = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000)
+  return now.toISOString().slice(0, 16)
+}
+
+function getRequestErrorMessage(requestError, operation = 'retrieve recovery data') {
+  const status = requestError.response?.status
+  const endpoint = requestError.config?.url
+  const detail = status === 429
+    ? `Request to ${endpoint || 'the backend'} was rate limited (HTTP 429).`
+    : requestError.response?.data?.message || requestError.message
+  return `Unable to ${operation}. ${detail}`
+}
+
+function RecoveryStatusEditor({ action, onUpdated }) {
+  const { user } = useAuth()
+  const [status, setStatus] = useState(action.status)
+  const [remarks, setRemarks] = useState('')
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const nextStatus = {
+    PENDING: 'IN_PROGRESS',
+    IN_PROGRESS: 'COMPLETED',
+  }[String(action.status).toUpperCase()]
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    setError('')
+    setSaving(true)
+    try {
+      await updateRecoveryActionStatus(action.actionId, { status, remarks })
+      await onUpdated()
+      setRemarks('')
+    } catch (requestError) {
+      setError(getRequestErrorMessage(requestError, 'save recovery update'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!user) {
+    return <p className="outage-related-empty">Sign in to update recovery progress.</p>
+  }
+
+  return (
+    <form className="recovery-update-form" onSubmit={handleSubmit}>
+      <label><span>Update status</span>
+        <select onChange={(event) => setStatus(event.target.value)} value={status}>
+          {[action.status, nextStatus].filter(Boolean).map((value) => <option key={value}>{value}</option>)}
+        </select>
+      </label>
+      <label><span>Technician remarks <small>Optional</small></span>
+        <textarea maxLength={255} onChange={(event) => setRemarks(event.target.value)} rows={2} value={remarks} />
+      </label>
+      {error && <div className="inline-error" role="alert">{error}</div>}
+      <button className="refresh-button" disabled={saving || status === action.status} type="submit">
+        {saving ? 'Saving…' : 'Save recovery update'}
+      </button>
+    </form>
+  )
 }
 
 export default function RecoveryPage({ onRefreshState }) {
+  const { user } = useAuth()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [createError, setCreateError] = useState('')
+  const [createNotice, setCreateNotice] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [selectedOutageId, setSelectedOutageId] = useState('9')
+  const [newAction, setNewAction] = useState({
+    actionType: '',
+    description: '',
+    priority: 'MEDIUM',
+    recommendedAt: getLocalDateTimeValue(),
+  })
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [selectedAction, setSelectedAction] = useState(null)
   const requestId = useRef(0)
+  const creatingRef = useRef(false)
+  const selectedOutageIdRef = useRef('9')
 
   const loadData = useCallback(async () => {
     const currentRequest = ++requestId.current
     setLoading(true)
     setError('')
     try {
-      const [actions, logs, audit] = await Promise.all([
-        fetchRecoveryActions(),
+      const [outages, logs, audit] = await Promise.all([
+        fetchOutages(),
         fetchRecoveryLogs(),
         fetchRecoveryStatusAudit(),
       ])
+      const outageId = outages.some((outage) => String(outage.outageId) === selectedOutageIdRef.current)
+        ? selectedOutageIdRef.current
+        : String(outages.find((outage) => Number(outage.outageId) === 9)?.outageId ?? outages[0]?.outageId ?? '')
+      const actions = outageId ? await fetchRecoveryActionsForOutage(outageId) : []
       if (requestId.current === currentRequest) {
-        setData({ actions, logs, audit })
+        selectedOutageIdRef.current = outageId
+        setSelectedOutageId(outageId)
+        setData({ outages, actions, logs, audit })
         setSelectedAction((selected) => selected
-          ? actions.find((action) => action.actionId === selected.actionId) || selected
-          : selected)
+          ? actions.find((action) => action.actionId === selected.actionId) || null
+          : null)
       }
       return requestId.current === currentRequest
     } catch (requestError) {
@@ -45,6 +129,46 @@ export default function RecoveryPage({ onRefreshState }) {
   }, [])
 
   const { refresh, lastSuccessfulAt } = useAutoRefresh(loadData)
+
+  const handleOutageChange = async (event) => {
+    const outageId = event.target.value
+    selectedOutageIdRef.current = outageId
+    setSelectedOutageId(outageId)
+    setSelectedAction(null)
+    setCreateError('')
+    setCreateNotice('')
+    await refresh()
+  }
+
+  const handleCreateAction = async (event) => {
+    event.preventDefault()
+    if (creatingRef.current || !selectedOutageId || !user) return
+
+    creatingRef.current = true
+    setCreating(true)
+    setCreateError('')
+    setCreateNotice('')
+    try {
+      const action = await createRecoveryAction({
+        outageId: Number(selectedOutageId),
+        ...newAction,
+      })
+      setCreateNotice(`Recovery action #${action.actionId} was saved to MySQL.`)
+      setNewAction({
+        actionType: '',
+        description: '',
+        priority: 'MEDIUM',
+        recommendedAt: getLocalDateTimeValue(),
+      })
+      await refresh()
+      setSelectedAction(action)
+    } catch (requestError) {
+      setCreateError(getRequestErrorMessage(requestError, 'save recovery action'))
+    } finally {
+      creatingRef.current = false
+      setCreating(false)
+    }
+  }
 
   useEffect(() => {
     onRefreshState?.(refresh, loading, lastSuccessfulAt)
@@ -101,6 +225,82 @@ export default function RecoveryPage({ onRefreshState }) {
   return (
     <div className="operations-page">
       {error && <div className="inline-error" role="alert">{error}</div>}
+      <section aria-labelledby="create-recovery-action-title" className="panel report-form-panel">
+        <div className="panel-heading">
+          <div>
+            <div className="eyebrow">RECOVERY PLANNING</div>
+            <h2 id="create-recovery-action-title">Create recovery action</h2>
+          </div>
+        </div>
+        <p className="report-form-intro">Create a recommendation for an existing outage. New actions start with PENDING status.</p>
+        {createError && <div className="inline-error" role="alert">{createError}</div>}
+        {createNotice && <div className="inline-success" role="status">{createNotice}</div>}
+        {!user && <p className="outage-related-empty">Sign in to create recovery actions.</p>}
+        <form className="report-form" onSubmit={handleCreateAction}>
+          <label className="report-form-wide">
+            <span>Outage</span>
+            <select
+              disabled={loading || !data?.outages.length}
+              onChange={handleOutageChange}
+              required
+              value={selectedOutageId}
+            >
+              {(data?.outages || []).map((outage) => (
+                <option key={outage.outageId} value={outage.outageId}>
+                  {`OUT-${String(outage.outageId).padStart(4, '0')} · ${outage.status} · ${outage.componentName}`}
+                </option>
+              ))}
+            </select>
+            {data?.outages.length === 0 && <small>No existing outages are available.</small>}
+          </label>
+          <label>
+            <span>Action type</span>
+            <input
+              maxLength={100}
+              onChange={(event) => setNewAction((current) => ({ ...current, actionType: event.target.value }))}
+              required
+              value={newAction.actionType}
+            />
+          </label>
+          <label>
+            <span>Priority</span>
+            <select
+              onChange={(event) => setNewAction((current) => ({ ...current, priority: event.target.value }))}
+              value={newAction.priority}
+            >
+              {['CRITICAL', 'HIGH', 'MEDIUM'].map((value) => <option key={value}>{value}</option>)}
+            </select>
+          </label>
+          <label className="report-form-wide">
+            <span>Description</span>
+            <textarea
+              maxLength={255}
+              onChange={(event) => setNewAction((current) => ({ ...current, description: event.target.value }))}
+              required
+              rows={3}
+              value={newAction.description}
+            />
+          </label>
+          <label>
+            <span>Recommended at</span>
+            <input
+              onChange={(event) => setNewAction((current) => ({ ...current, recommendedAt: event.target.value }))}
+              required
+              type="datetime-local"
+              value={newAction.recommendedAt}
+            />
+          </label>
+          <div className="report-form-actions">
+            <button
+              className="auth-submit"
+              disabled={creating || loading || !user || !selectedOutageId || !data?.outages.length}
+              type="submit"
+            >
+              {creating ? 'Saving…' : 'Save recovery action'}
+            </button>
+          </div>
+        </form>
+      </section>
       <section aria-label="Recovery action filters" className="panel operations-controls">
         <label className="operations-search">
           <span className="visually-hidden">Search recovery actions</span>
@@ -209,6 +409,14 @@ export default function RecoveryPage({ onRefreshState }) {
                 </dl>
               </div>
               <div className="operations-related">
+                <h3>Update recovery progress</h3>
+                <RecoveryStatusEditor
+                  action={selectedAction}
+                  key={`${selectedAction.actionId}:${selectedAction.status}`}
+                  onUpdated={refresh}
+                />
+              </div>
+              <div className="operations-related">
                 <h3><Activity size={14} /> Execution logs <span>{selectedLogs.length}</span></h3>
                 {selectedLogs.length === 0 ? (
                   <p className="operations-related-empty">No execution logs for this action.</p>
@@ -246,7 +454,7 @@ export default function RecoveryPage({ onRefreshState }) {
           )}
         </section>
       </div>
-      <div className="dashboard-footnote">Recovery actions and execution history are read-only database records.</div>
+      <div className="dashboard-footnote">Recovery updates are recorded in MySQL with status history and technician execution logs.</div>
     </div>
   )
 }

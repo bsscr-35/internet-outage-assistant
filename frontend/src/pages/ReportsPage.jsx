@@ -1,7 +1,7 @@
-import { AlertTriangle, Activity, BarChart3, Download, RefreshCw, Radio, Users } from 'lucide-react'
+import { AlertTriangle, Activity, BarChart3, Download, ListChecks, RefreshCw, Radio, Users } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import StatCard from '../components/StatCard'
-import { StatusBadge } from '../components/StatusBadge'
+import { SeverityBadge, StatusBadge } from '../components/StatusBadge'
 import { fetchReportSummary } from '../services/api'
 import useAutoRefresh from '../hooks/useAutoRefresh'
 
@@ -30,6 +30,9 @@ function downloadCsv(report) {
     ['Summary', 'Total outages', report.totalOutages, '', '', ''],
     ['Summary', 'Affected users', report.totalAffectedUsers, '', '', ''],
     ['Summary', 'Recovery actions', report.totalRecoveryActions, '', '', ''],
+    ['Summary', 'Recovery logs', report.summary.totalRecoveryLogs, '', '', ''],
+    ['Summary', 'Completed recovery actions', report.summary.completedRecoveryActions, '', '', ''],
+    ['Summary', 'Recovery actions in progress', report.summary.inProgressRecoveryActions, '', '', ''],
     ...report.severityDistribution.map(({ severity, count }) => ['Severity', severity, count, '', '', '']),
     ...report.recoverySummary.map(({ status, count }) => ['Recovery status', status, count, '', '', '']),
     ...report.locationSummary.map(({ locationName, region, outageCount, affectedUsers }) => [
@@ -39,6 +42,14 @@ function downloadCsv(report) {
       region,
       outageCount,
       affectedUsers,
+    ]),
+    ...report.incidents.map((incident) => [
+      'Incident',
+      `OUT-${String(incident.outageId).padStart(4, '0')} · ${incident.componentName}`,
+      `${incident.status} · ${incident.severity} · ${incident.recoveryActionCount} actions (${incident.completedRecoveryActionCount} completed)`,
+      `${incident.locationName}, ${incident.region}`,
+      incident.impactCount,
+      `${incident.latestServiceStatus || 'No check'} / ${incident.latestConnectivityStatus || 'No check'}`,
     ]),
   ]
   const csv = rows.map((row) => row.map(escapeCsv).join(',')).join('\r\n')
@@ -89,6 +100,7 @@ export default function ReportsPage({ onRefreshState }) {
       totalOutages: Number(data.summary.totalOutages) || 0,
       totalAffectedUsers: Number(data.summary.totalAffectedUsers) || 0,
       totalRecoveryActions: Number(data.summary.totalRecoveryActions) || 0,
+      totalRecoveryLogs: Number(data.summary.totalRecoveryLogs) || 0,
     }
   }, [data])
 
@@ -157,6 +169,13 @@ export default function ReportsPage({ onRefreshState }) {
               title="Recovery actions"
               tone="orange"
               value={numberFormatter.format(report.totalRecoveryActions)}
+            />
+            <StatCard
+              icon={ListChecks}
+              note="All recorded activity"
+              title="Recovery logs"
+              tone="blue"
+              value={numberFormatter.format(report.totalRecoveryLogs)}
             />
             <StatCard
               icon={RefreshCw}
@@ -246,6 +265,48 @@ export default function ReportsPage({ onRefreshState }) {
                         <td>{location.region}</td>
                         <td>{numberFormatter.format(location.outageCount)}</td>
                         <td>{numberFormatter.format(location.affectedUsers)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section aria-labelledby="report-incidents-title" className="panel report-panel report-location-panel">
+            <div className="panel-heading">
+              <div>
+                <div className="eyebrow">RELATED LIVE RECORDS</div>
+                <h2 id="report-incidents-title">Incident register</h2>
+              </div>
+              <span className="record-count">{report.incidents.length} incidents</span>
+            </div>
+            {report.incidents.length === 0 ? (
+              <div className="report-empty-small">No incident records are available.</div>
+            ) : (
+              <div className="report-location-table-wrap">
+                <table className="report-location-table">
+                  <thead>
+                    <tr>
+                      <th>OUTAGE</th>
+                      <th>COMPONENT / LOCATION</th>
+                      <th>STATUS / SEVERITY</th>
+                      <th>IMPACTS</th>
+                      <th>RECOVERY</th>
+                      <th>LATEST CHECK</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.incidents.map((incident) => (
+                      <tr key={incident.outageId}>
+                        <td>OUT-{String(incident.outageId).padStart(4, '0')}</td>
+                        <td>{incident.componentName}<br />{incident.locationName}, {incident.region}</td>
+                        <td><StatusBadge status={incident.status} /> <SeverityBadge severity={incident.severity} /></td>
+                        <td>{incident.impactCount}</td>
+                        <td>{incident.completedRecoveryActionCount}/{incident.recoveryActionCount} completed</td>
+                        <td>{incident.latestServiceStatus && incident.latestConnectivityStatus
+                          ? `${incident.latestServiceStatus} / ${incident.latestConnectivityStatus}`
+                          : 'No check recorded'}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS auth_credential (
+  UserID INT NOT NULL,
+  Email VARCHAR(254) NOT NULL,
+  PasswordHash VARCHAR(255) NOT NULL,
+  CreatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (UserID),
+  UNIQUE KEY uq_auth_credential_email (Email),
+  CONSTRAINT fk_auth_credential_user
+    FOREIGN KEY (UserID) REFERENCES `user` (UserID)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE
+) ENGINE=InnoDB;

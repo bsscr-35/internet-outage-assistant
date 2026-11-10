@@ -1,9 +1,10 @@
-import { AlertTriangle, MapPin, RefreshCw, Search } from 'lucide-react'
+import { AlertTriangle, MapPin, Plus, RefreshCw, Search, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { SeverityBadge, StatusBadge } from '../components/StatusBadge'
-import { fetchComponents } from '../services/api'
+import { createComponent, fetchComponents, fetchLocations } from '../services/api'
 import useAutoRefresh from '../hooks/useAutoRefresh'
+import useAuth from '../contexts/useAuth'
 
 function getRequestErrorMessage(requestError) {
   const detail = requestError.response?.data?.message || requestError.message
@@ -12,9 +13,22 @@ function getRequestErrorMessage(requestError) {
 
 export default function ComponentsPage({ onRefreshState }) {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [components, setComponents] = useState(null)
+  const [locations, setLocations] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({
+    componentName: '',
+    componentType: '',
+    locationId: '',
+    ipAddress: '',
+    status: 'UP',
+    criticality: 'MEDIUM',
+  })
   const [search, setSearch] = useState('')
   const [type, setType] = useState('')
   const [status, setStatus] = useState('')
@@ -26,8 +40,15 @@ export default function ComponentsPage({ onRefreshState }) {
     setLoading(true)
     setError('')
     try {
-      const result = await fetchComponents()
-      if (requestId.current === currentRequest) setComponents(result)
+      const [result, locationRows] = await Promise.all([fetchComponents(), fetchLocations()])
+      if (requestId.current === currentRequest) {
+        setComponents(result)
+        setLocations(locationRows)
+        setForm((current) => ({
+          ...current,
+          locationId: current.locationId || String(locationRows[0]?.locationId ?? ''),
+        }))
+      }
       return requestId.current === currentRequest
     } catch (requestError) {
       if (requestId.current === currentRequest) setError(getRequestErrorMessage(requestError))
@@ -38,6 +59,32 @@ export default function ComponentsPage({ onRefreshState }) {
   }, [])
 
   const { refresh, lastSuccessfulAt } = useAutoRefresh(loadData)
+
+  const handleCreateComponent = async (event) => {
+    event.preventDefault()
+    setError('')
+    setSuccess('')
+    setSaving(true)
+    try {
+      const component = await createComponent({
+        ...form,
+        locationId: Number(form.locationId),
+      })
+      setSuccess(`${component.componentName} was added to ${component.locationName}.`)
+      setForm((current) => ({
+        ...current,
+        componentName: '',
+        componentType: '',
+        ipAddress: '',
+      }))
+      setShowForm(false)
+      await loadData()
+    } catch (requestError) {
+      setError(getRequestErrorMessage(requestError))
+    } finally {
+      setSaving(false)
+    }
+  }
 
   useEffect(() => {
     onRefreshState?.(refresh, loading, lastSuccessfulAt)
@@ -104,6 +151,57 @@ export default function ComponentsPage({ onRefreshState }) {
   return (
     <div className="component-page">
       {error && <div className="inline-error" role="alert">{error}</div>}
+      {success && <div className="inline-success" role="status">{success}</div>}
+      <div className="management-actions">
+        {user ? (
+          <button className="auth-submit" disabled={locations.length === 0} onClick={() => setShowForm((visible) => !visible)} type="button">
+            {showForm ? <X size={15} /> : <Plus size={15} />}
+            {showForm ? 'Cancel' : 'Add component'}
+          </button>
+        ) : (
+          <Link className="management-sign-in" to="/login">Sign in to add a component</Link>
+        )}
+      </div>
+      {showForm && (
+        <form className="panel management-form" onSubmit={handleCreateComponent}>
+          <label>
+            <span>Component name</span>
+            <input maxLength={100} onChange={(event) => setForm((current) => ({ ...current, componentName: event.target.value }))} required value={form.componentName} />
+          </label>
+          <label>
+            <span>Component type</span>
+            <input maxLength={50} onChange={(event) => setForm((current) => ({ ...current, componentType: event.target.value }))} required value={form.componentType} />
+          </label>
+          <label>
+            <span>Location</span>
+            <select onChange={(event) => setForm((current) => ({ ...current, locationId: event.target.value }))} required value={form.locationId}>
+              {locations.map((location) => (
+                <option key={location.locationId} value={location.locationId}>
+                  {location.locationName} · {location.region}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Criticality</span>
+            <select onChange={(event) => setForm((current) => ({ ...current, criticality: event.target.value }))} value={form.criticality}>
+              {['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].map((value) => <option key={value}>{value}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Initial status</span>
+            <select onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))} value={form.status}>
+              <option value="UP">UP</option>
+              <option value="DOWN">DOWN</option>
+            </select>
+          </label>
+          <label>
+            <span>IP address <small>Optional</small></span>
+            <input maxLength={45} onChange={(event) => setForm((current) => ({ ...current, ipAddress: event.target.value }))} value={form.ipAddress} />
+          </label>
+          <button className="auth-submit" disabled={saving || locations.length === 0} type="submit">{saving ? 'Saving...' : 'Save component'}</button>
+        </form>
+      )}
       <section aria-label="Network component search and filters" className="panel component-controls">
         <label className="component-search">
           <Search aria-hidden="true" size={17} />

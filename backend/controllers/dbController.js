@@ -11,7 +11,12 @@ async function getDatabaseHealth(req, res) {
       message: 'Database connection successful.',
     });
   } catch (error) {
-    console.error('Database health check failed:', error);
+    console.error('Database health check failed:', {
+      code: error.code,
+      errno: error.errno,
+      sqlState: error.sqlState,
+      message: error.message,
+    });
     res.status(503).json({
       status: 'error',
       message: 'Unable to connect to the database.',

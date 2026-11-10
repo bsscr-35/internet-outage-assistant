@@ -1,34 +1,69 @@
 import { AlertTriangle, CheckCircle2, RefreshCw, Search, ShieldCheck, Wifi } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { StatusBadge } from '../components/StatusBadge'
 import StatCard from '../components/StatCard'
-import { fetchServiceVerifications } from '../services/api'
+import {
+  createServiceVerification,
+  fetchImpacts,
+  fetchOutages,
+  fetchServiceVerifications,
+} from '../services/api'
 import formatDatabaseDateTime from '../utils/formatDatabaseDateTime'
 import useAutoRefresh from '../hooks/useAutoRefresh'
+import useAuth from '../contexts/useAuth'
 
 const numberFormatter = new Intl.NumberFormat('en-US')
 
-function getRequestErrorMessage(requestError) {
+function getRequestErrorMessage(requestError, operation = 'retrieve service verification data') {
   const detail = requestError.response?.data?.message || requestError.message
-  return `Unable to retrieve service verification data from the backend. ${detail}`
+  return `Unable to ${operation}. ${detail}`
 }
 
 export default function VerificationPage({ onRefreshState }) {
+  const { user } = useAuth()
   const [verifications, setVerifications] = useState(null)
+  const [outages, setOutages] = useState([])
+  const [impacts, setImpacts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [createError, setCreateError] = useState('')
+  const [createNotice, setCreateNotice] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [newVerification, setNewVerification] = useState({
+    outageId: '',
+    serviceStatus: '',
+    connectivityStatus: '',
+  })
   const [search, setSearch] = useState('')
   const [serviceStatus, setServiceStatus] = useState('')
   const [connectivityStatus, setConnectivityStatus] = useState('')
   const requestId = useRef(0)
+  const creatingRef = useRef(false)
 
   const loadData = useCallback(async () => {
     const currentRequest = ++requestId.current
     setLoading(true)
     setError('')
     try {
-      const result = await fetchServiceVerifications()
-      if (requestId.current === currentRequest) setVerifications(result)
+      const [result, outageRows, impactRows] = await Promise.all([
+        fetchServiceVerifications(),
+        fetchOutages(),
+        fetchImpacts(),
+      ])
+      if (requestId.current === currentRequest) {
+        setVerifications(result)
+        setOutages(outageRows)
+        setImpacts(impactRows)
+        const eligibleIds = outageRows
+          .filter((outage) => outage.status?.toUpperCase() === 'ONGOING'
+            && impactRows.some((impact) => Number(impact.outageId) === Number(outage.outageId)))
+          .map((outage) => String(outage.outageId))
+        setNewVerification((current) => ({
+          ...current,
+          outageId: eligibleIds.includes(current.outageId) ? current.outageId : eligibleIds[0] || '',
+        }))
+      }
       return requestId.current === currentRequest
     } catch (requestError) {
       if (requestId.current === currentRequest) setError(getRequestErrorMessage(requestError))
@@ -39,6 +74,37 @@ export default function VerificationPage({ onRefreshState }) {
   }, [])
 
   const { refresh, lastSuccessfulAt } = useAutoRefresh(loadData)
+
+  const eligibleOutages = useMemo(
+    () => outages.filter((outage) => outage.status?.toUpperCase() === 'ONGOING'
+      && impacts.some((impact) => Number(impact.outageId) === Number(outage.outageId))),
+    [outages, impacts],
+  )
+
+  const handleCreateVerification = async (event) => {
+    event.preventDefault()
+    if (creatingRef.current || !user) return
+
+    creatingRef.current = true
+    setCreating(true)
+    setCreateError('')
+    setCreateNotice('')
+    try {
+      const verification = await createServiceVerification({
+        outageId: Number(newVerification.outageId),
+        serviceStatus: newVerification.serviceStatus,
+        connectivityStatus: newVerification.connectivityStatus,
+      })
+      setCreateNotice(`Verification #${verification.verificationId} was saved to MySQL.`)
+      setNewVerification((current) => ({ ...current, serviceStatus: '', connectivityStatus: '' }))
+      await refresh()
+    } catch (requestError) {
+      setCreateError(getRequestErrorMessage(requestError, 'save service check'))
+    } finally {
+      creatingRef.current = false
+      setCreating(false)
+    }
+  }
 
   useEffect(() => {
     onRefreshState?.(refresh, loading, lastSuccessfulAt)
@@ -103,6 +169,60 @@ export default function VerificationPage({ onRefreshState }) {
   return (
     <div className="operations-page">
       {error && <div className="inline-error" role="alert">{error}</div>}
+      {user ? (
+        <section aria-labelledby="create-verification-title" className="panel report-form-panel">
+          <div className="panel-heading">
+            <div><div className="eyebrow">OBSERVED POST-RECOVERY CHECK</div><h2 id="create-verification-title">Record a service check</h2></div>
+          </div>
+          <p className="report-form-intro">Select the result you actually observed. A successful result can be recorded only after all recovery actions for the outage are completed.</p>
+          {createError && <div className="inline-error" role="alert">{createError}</div>}
+          {createNotice && <div className="inline-success" role="status">{createNotice}</div>}
+          {eligibleOutages.length === 0 ? (
+            <div className="module-empty">No ongoing outage with a recorded service impact is ready for verification.</div>
+          ) : (
+            <form className="report-form" onSubmit={handleCreateVerification}>
+              <label>
+                <span>Outage and impacted service</span>
+                <select onChange={(event) => setNewVerification((current) => ({ ...current, outageId: event.target.value }))} required value={newVerification.outageId}>
+                  {eligibleOutages.map((outage) => {
+                    const serviceIds = [...new Set(impacts
+                      .filter((impact) => Number(impact.outageId) === Number(outage.outageId))
+                      .map((impact) => Number(impact.serviceId)))].sort((a, b) => a - b)
+                    return (
+                      <option key={outage.outageId} value={outage.outageId}>
+                        OUT-{String(outage.outageId).padStart(4, '0')} · {outage.componentName} · {outage.locationName} · Service {serviceIds.map((id) => `#${id}`).join(', ')}
+                      </option>
+                    )
+                  })}
+                </select>
+              </label>
+              <label>
+                <span>Observed service status</span>
+                <select onChange={(event) => setNewVerification((current) => ({ ...current, serviceStatus: event.target.value }))} required value={newVerification.serviceStatus}>
+                  <option value="">Select observed status</option>
+                  <option value="DOWN">DOWN</option>
+                  <option value="RESTORED">RESTORED</option>
+                </select>
+              </label>
+              <label>
+                <span>Observed connectivity</span>
+                <select onChange={(event) => setNewVerification((current) => ({ ...current, connectivityStatus: event.target.value }))} required value={newVerification.connectivityStatus}>
+                  <option value="">Select connectivity result</option>
+                  <option value="DISCONNECTED">DISCONNECTED</option>
+                  <option value="CONNECTED">CONNECTED</option>
+                </select>
+              </label>
+              <div className="report-form-actions">
+                <button className="auth-submit" disabled={creating || !newVerification.outageId} type="submit">
+                  {creating ? 'Saving check…' : 'Save observed check'}
+                </button>
+              </div>
+            </form>
+          )}
+        </section>
+      ) : (
+        <p className="outage-related-empty">Sign in to record an observed service check. <Link to="/login">Sign in</Link></p>
+      )}
       <section aria-label="Verification summaries" className="stats-grid operations-summary-grid">
         {summaryCards.map((card) => <StatCard {...card} key={card.title} />)}
       </section>
@@ -169,9 +289,10 @@ export default function VerificationPage({ onRefreshState }) {
               <article className="verification-record" key={entry.verificationId}>
                 <div className="verification-record-heading">
                   <strong>VERIFICATION #{entry.verificationId}</strong>
-                  <span>Outage #{entry.outageId}</span>
+                  <span>OUT-{String(entry.outageId).padStart(4, '0')} · {entry.componentName} · {entry.locationName}, {entry.region}</span>
                 </div>
                 <div className="verification-record-facts">
+                  <div><small>OUTAGE-IMPACT SERVICE IDS</small><span>{entry.serviceIds.length ? entry.serviceIds.map((id) => `#${id}`).join(', ') : 'No impact service recorded'}</span></div>
                   <div><small>VERIFIED AT</small><span>{formatDatabaseDateTime(entry.verificationTime)}</span></div>
                   <div><small>SERVICE STATUS</small><StatusBadge status={entry.serviceStatus} /></div>
                   <div><small>CONNECTIVITY</small><StatusBadge status={entry.connectivityStatus} /></div>

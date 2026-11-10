@@ -7,7 +7,11 @@ import {
   ChevronRight,
   Gauge,
   LifeBuoy,
+  LogIn,
+  LogOut,
+  MapPinned,
   Network,
+  PlusCircle,
   ScrollText,
   ShieldCheck,
   X,
@@ -16,6 +20,8 @@ import {
 const navigation = [
   { label: 'Dashboard', path: '/', icon: Gauge },
   { label: 'Outages', path: '/outages', icon: BellRing },
+  { label: 'Report outage', path: '/report', icon: PlusCircle },
+  { label: 'Locations', path: '/locations', icon: MapPinned },
   { label: 'Network Components', path: '/components', icon: Network },
   { label: 'Impact Analysis', path: '/impacts', icon: Activity },
   { label: 'Recovery Management', path: '/recovery', icon: LifeBuoy },
@@ -24,7 +30,7 @@ const navigation = [
   { label: 'Reports', path: '/reports', icon: BarChart3 },
 ]
 
-export default function Sidebar({ collapsed, onToggle, mobileOpen, onClose }) {
+export default function Sidebar({ collapsed, onToggle, mobileOpen, onClose, user, onSignOut }) {
   return (
     <>
       {mobileOpen && (
@@ -67,10 +73,24 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onClose }) {
           ))}
         </nav>
 
+        <div className="sidebar-account">
+          {user ? (
+            <>
+              <span className="sidebar-account-name" title={user.email}>{user.userName}</span>
+              <button className="sidebar-account-button" onClick={onSignOut} type="button">
+                <LogOut size={14} /> <span>Sign out</span>
+              </button>
+            </>
+          ) : (
+            <NavLink className="sidebar-account-button" onClick={onClose} to="/login">
+              <LogIn size={14} /> <span>Sign in</span>
+            </NavLink>
+          )}
+        </div>
         <div className="sidebar-spacer" />
         <div className="sidebar-status">
           <div className="sidebar-status-copy">
-            <span>Read-only dashboard</span>
+            <span>Live operations data</span>
             <small>Live database records</small>
           </div>
         </div>

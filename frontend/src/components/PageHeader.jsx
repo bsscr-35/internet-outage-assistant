@@ -8,6 +8,7 @@ export default function PageHeader({
   onMenu,
   autoRefreshEnabled,
   lastSuccessfulAt,
+  user,
 }) {
   return (
     <header className="page-header">
@@ -55,7 +56,9 @@ export default function PageHeader({
             <span>{refreshing ? 'Refreshing' : 'Refresh'}</span>
           </button>
         )}
-        <div aria-label="Network operations user" className="user-avatar">SO</div>
+        <div aria-label={user ? `Signed in as ${user.userName}` : 'Not signed in'} className="user-avatar">
+          {user ? user.userName.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase() : 'G'}
+        </div>
       </div>
     </header>
   )

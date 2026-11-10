@@ -1,18 +1,16 @@
-# Internet Outage Response & Recovery Assistant — Frontend
+# Frontend
 
-The frontend is a React dashboard built with Vite, Tailwind CSS, React Router, Axios, Recharts, and Lucide React.
+The React/Vite application displays live outage, component, impact, recovery, verification, report, and location data served by the Express API. Account sign-in enables outage reporting, status updates, and recovery tracking.
 
 ## Run locally
 
 ```powershell
-cd C:\Users\Sharath\Desktop\internet-outage-assistant\frontend
-npm install
+Set-Location C:\Users\Sharath\Desktop\internet-outage-assistant\frontend
+npm ci
 Copy-Item .env.example .env
 npm run dev
 ```
 
-Set `VITE_API_BASE_URL` in `.env` to the Express API base URL. The example uses `http://localhost:3000/api`. The backend must be running and allow browser requests from the Vite development server.
+Set `VITE_API_BASE_URL` in `.env` to the Express API base URL (the default is `http://localhost:3000/api`). The backend must be running and allow the Vite origin via its `CORS_ORIGINS` setting.
 
-The dashboard loads statistics from `GET /api/dashboard/stats` and outage records from `GET /api/outages`.
-
-The active dashboard module automatically refreshes its live data every 30 seconds. The header shows the last successful refresh time; manual refresh remains available.
+Run `npm run build` for a production build and `npm run lint` for static checks. The app fetches live data from MySQL-backed API routes; it does not substitute sample records when the API is unavailable.

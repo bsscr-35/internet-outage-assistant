@@ -75,10 +75,12 @@ The base account-setup script configures `SELECT` on `user`, `auth_credential`, 
 
 The base account-setup script configures these writes:
 
-- `INSERT`: `user`, `auth_credential`, `outage`, `outage_impact`, `recovery_status_audit`, `recovery_log`.
+- `INSERT`: `user`, `auth_credential`, `outage`, `outage_impact`, `recovery_log`.
 - `UPDATE`: `outage`, `recovery_action`.
 
 No `DELETE`, schema-wide DDL, or rights on unrelated tables are needed. Inspect `backend/migrations/002_create_app_user.sql`. Generate a random application password, then replace the SQL file's `REPLACE_WITH_RANDOM_HEX_PASSWORD` placeholder locally with that value. Keep the password out of Git and restore the placeholder in the SQL file after running it.
+
+The existing `trg_recovery_status_audit` trigger writes status-audit rows when `recovery_action.Status` changes. The application account therefore needs `SELECT` but not `INSERT` on `recovery_status_audit`; the status update and recovery log are recorded in one transaction.
 
 The API also supports recording new recovery actions and observed service checks. To enable those optional writes, an administrator must additionally grant only:
 

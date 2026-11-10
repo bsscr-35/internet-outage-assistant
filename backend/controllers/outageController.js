@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { addServiceNames, getServiceName } = require('../services/serviceNames');
 
 const validSeverities = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']);
 const validImpactLevels = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']);
@@ -34,7 +35,12 @@ async function getOutages(req, res) {
       nc.Criticality AS componentCriticality,
       l.LocationID AS locationId,
       l.LocationName AS locationName,
-      l.Region AS region
+      l.Region AS region,
+      (
+        SELECT GROUP_CONCAT(DISTINCT oi.ServiceID ORDER BY oi.ServiceID)
+        FROM outage_impact AS oi
+        WHERE oi.OutageID = o.OutageID
+      ) AS serviceIds
     FROM outage AS o
     INNER JOIN network_component AS nc
       ON nc.ComponentID = o.ComponentID AND nc.OwnerUserID = o.OwnerUserID
@@ -44,7 +50,7 @@ async function getOutages(req, res) {
     ORDER BY o.DetectedAt DESC, o.OutageID DESC
   `, [req.user.userId]);
 
-  res.status(200).json({ outages });
+  res.status(200).json({ outages: addServiceNames(outages) });
 }
 
 async function getOutageById(req, res) {
@@ -98,6 +104,7 @@ async function getOutageById(req, res) {
           ImpactID AS impactId,
           OutageID AS outageId,
           ServiceID AS serviceId,
+          ServiceID AS serviceNameId,
           ImpactLevel AS impactLevel,
           UsersAffected AS usersAffected,
           Description AS description
@@ -128,7 +135,10 @@ async function getOutageById(req, res) {
   res.status(200).json({
     outage: {
       ...outages[0],
-      impacts: impacts[0],
+      impacts: impacts[0].map(({ serviceNameId, ...impact }) => ({
+        ...impact,
+        serviceName: getServiceName(serviceNameId),
+      })),
       recoveryActions: recoveryActions[0],
     },
   });

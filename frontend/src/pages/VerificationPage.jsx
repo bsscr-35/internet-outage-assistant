@@ -185,12 +185,9 @@ export default function VerificationPage({ onRefreshState }) {
                 <span>Outage and impacted service</span>
                 <select onChange={(event) => setNewVerification((current) => ({ ...current, outageId: event.target.value }))} required value={newVerification.outageId}>
                   {eligibleOutages.map((outage) => {
-                    const serviceIds = [...new Set(impacts
-                      .filter((impact) => Number(impact.outageId) === Number(outage.outageId))
-                      .map((impact) => Number(impact.serviceId)))].sort((a, b) => a - b)
                     return (
                       <option key={outage.outageId} value={outage.outageId}>
-                        OUT-{String(outage.outageId).padStart(4, '0')} · {outage.componentName} · {outage.locationName} · Service {serviceIds.map((id) => `#${id}`).join(', ')}
+                        OUT-{String(outage.outageId).padStart(4, '0')} · {outage.componentName} · {outage.locationName} · {outage.serviceNames?.join(', ') || 'No service name configured'}
                       </option>
                     )
                   })}
@@ -292,7 +289,7 @@ export default function VerificationPage({ onRefreshState }) {
                   <span>OUT-{String(entry.outageId).padStart(4, '0')} · {entry.componentName} · {entry.locationName}, {entry.region}</span>
                 </div>
                 <div className="verification-record-facts">
-                  <div><small>OUTAGE-IMPACT SERVICE IDS</small><span>{entry.serviceIds.length ? entry.serviceIds.map((id) => `#${id}`).join(', ') : 'No impact service recorded'}</span></div>
+                  <div><small>AFFECTED SERVICES</small><span>{entry.serviceNames?.join(', ') || 'No impact service recorded'}</span></div>
                   <div><small>VERIFIED AT</small><span>{formatDatabaseDateTime(entry.verificationTime)}</span></div>
                   <div><small>SERVICE STATUS</small><StatusBadge status={entry.serviceStatus} /></div>
                   <div><small>CONNECTIVITY</small><StatusBadge status={entry.connectivityStatus} /></div>

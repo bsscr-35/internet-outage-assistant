@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { addServiceNames, getServiceNames } = require('../services/serviceNames');
 
 function parsePositiveInteger(value) {
   if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) return null;
@@ -41,14 +42,19 @@ async function getRecoveryActions(req, res) {
       ra.Description AS description,
       ra.Priority AS priority,
       ra.RecommendedAt AS recommendedAt,
-      ra.Status AS status
+      ra.Status AS status,
+      (
+        SELECT GROUP_CONCAT(DISTINCT oi.ServiceID ORDER BY oi.ServiceID)
+        FROM outage_impact AS oi
+        WHERE oi.OutageID = ra.OutageID
+      ) AS serviceIds
     FROM recovery_action AS ra
     INNER JOIN outage AS o ON o.OutageID = ra.OutageID
     WHERE o.OwnerUserID = ?
     ORDER BY ra.RecommendedAt DESC, ra.ActionID DESC
   `, [req.user.userId]);
 
-  res.status(200).json({ actions });
+  res.status(200).json({ actions: addServiceNames(actions) });
 }
 
 async function getRecoveryActionsForOutage(req, res) {
@@ -73,13 +79,18 @@ async function getRecoveryActionsForOutage(req, res) {
       Description AS description,
       Priority AS priority,
       RecommendedAt AS recommendedAt,
-      Status AS status
+      Status AS status,
+      (
+        SELECT GROUP_CONCAT(DISTINCT oi.ServiceID ORDER BY oi.ServiceID)
+        FROM outage_impact AS oi
+        WHERE oi.OutageID = recovery_action.OutageID
+      ) AS serviceIds
     FROM recovery_action
     WHERE OutageID = ?
     ORDER BY RecommendedAt DESC, ActionID DESC
   `, [outageId]);
 
-  return res.status(200).json({ actions });
+  return res.status(200).json({ actions: addServiceNames(actions) });
 }
 
 async function createRecoveryAction(req, res) {
@@ -107,7 +118,12 @@ async function createRecoveryAction(req, res) {
   }
 
   const [outages] = await pool.execute(
-    'SELECT OutageID FROM outage WHERE OutageID = ? AND OwnerUserID = ?',
+    `SELECT OutageID,
+       (SELECT GROUP_CONCAT(DISTINCT oi.ServiceID ORDER BY oi.ServiceID)
+        FROM outage_impact AS oi
+        WHERE oi.OutageID = outage.OutageID) AS serviceIds
+     FROM outage
+     WHERE OutageID = ? AND OwnerUserID = ?`,
     [outageId, req.user.userId],
   );
   if (outages.length === 0) {
@@ -128,6 +144,7 @@ async function createRecoveryAction(req, res) {
       priority,
       recommendedAt,
       status: 'PENDING',
+      serviceNames: getServiceNames(outages[0].serviceIds),
     },
   });
 }
@@ -147,7 +164,12 @@ async function getRecoveryLogs(req, res) {
       rl.Remarks AS remarks,
       nc.ComponentName AS componentName,
       l.LocationName AS locationName,
-      l.Region AS region
+      l.Region AS region,
+      (
+        SELECT GROUP_CONCAT(DISTINCT oi.ServiceID ORDER BY oi.ServiceID)
+        FROM outage_impact AS oi
+        WHERE oi.OutageID = o.OutageID
+      ) AS serviceIds
     FROM recovery_log AS rl
     INNER JOIN recovery_action AS ra ON ra.ActionID = rl.ActionID
     INNER JOIN outage AS o ON o.OutageID = ra.OutageID
@@ -159,7 +181,7 @@ async function getRecoveryLogs(req, res) {
     ORDER BY rl.StartedAt DESC, rl.RecoveryID DESC
   `, [req.user.userId]);
 
-  res.status(200).json({ logs });
+  res.status(200).json({ logs: addServiceNames(logs) });
 }
 
 async function getRecoveryStatusAudit(req, res) {
@@ -240,10 +262,6 @@ async function updateRecoveryActionStatus(req, res) {
       await connection.execute(
         'UPDATE recovery_action SET Status = ? WHERE ActionID = ?',
         [status, actionId],
-      );
-      await connection.execute(
-        'INSERT INTO recovery_status_audit (ActionID, OldStatus, NewStatus, ChangedAt) VALUES (?, ?, ?, NOW())',
-        [actionId, previousStatus, status],
       );
       await connection.execute(
         `INSERT INTO recovery_log (ActionID, AssignedTo, StartedAt, CompletedAt, Status, Remarks)

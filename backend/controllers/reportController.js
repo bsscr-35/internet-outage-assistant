@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { addServiceNames } = require('../services/serviceNames');
 
 async function getReportSummary(req, res) {
   const [summaryRows, severityDistribution, recoverySummary, locationSummary, incidentSummary] = await Promise.all([
@@ -97,6 +98,11 @@ async function getReportSummary(req, res) {
         l.LocationName AS locationName,
         l.Region AS region,
         (
+          SELECT GROUP_CONCAT(DISTINCT oi.ServiceID ORDER BY oi.ServiceID)
+          FROM outage_impact AS oi
+          WHERE oi.OutageID = o.OutageID
+        ) AS serviceIds,
+        (
           SELECT COUNT(*)
           FROM outage_impact AS oi
           WHERE oi.OutageID = o.OutageID
@@ -155,7 +161,7 @@ async function getReportSummary(req, res) {
     resolvedOutages: Number(row.resolvedOutages),
     affectedUsers: Number(row.affectedUsers),
   }));
-  const incidents = incidentSummary[0].map((row) => ({
+  const incidents = addServiceNames(incidentSummary[0]).map((row) => ({
     ...row,
     outageId: Number(row.outageId),
     locationId: Number(row.locationId),

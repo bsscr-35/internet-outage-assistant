@@ -228,7 +228,7 @@ export default function ImpactsPage({ onRefreshState }) {
               <span>Affected service</span>
               <select name="serviceId" onChange={(event) => setNewImpact((current) => ({ ...current, serviceId: event.target.value }))} required value={newImpact.serviceId}>
                 <option value="">Select a service</option>
-                {services.map((service) => <option key={service.serviceId} value={service.serviceId}>Service #{service.serviceId}</option>)}
+                {services.map((service) => <option key={service.serviceId} value={service.serviceId}>{service.serviceName}</option>)}
               </select>
             </label>
             <label>
@@ -330,7 +330,7 @@ export default function ImpactsPage({ onRefreshState }) {
                   <p>{impact.description || 'No description recorded.'}</p>
                   <div className="impact-record-meta">
                     <span>OUT-{String(impact.outageId).padStart(4, '0')} · {impact.componentName} · {impact.locationName}, {impact.region} · {impact.outageStatus}</span>
-                    <span>Service #{impact.serviceId}</span>
+                    <span>{impact.serviceName || 'Service name not configured'}</span>
                     <span>{numberFormatter.format(Number(impact.usersAffected) || 0)} users affected</span>
                   </div>
                   <button

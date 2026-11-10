@@ -41,6 +41,29 @@ Copy the example environment file only if no local `backend/.env` exists. Preser
 
 Follow [the Windows setup and end-to-end demo guide](docs/WINDOWS_DEMO_SETUP.md) for installation, environment configuration, startup, tests, and demonstration steps. Any schema migration or permission change is a manual administrator operation.
 
+## Run on macOS
+
+Use two Terminal windows. Do not overwrite an existing `backend/.env`; it contains local credentials.
+
+```sh
+cd backend
+npm ci
+npm test
+npm start
+```
+
+In the second window:
+
+```sh
+cd frontend
+npm ci
+npm run lint
+npm run build
+npm run dev
+```
+
+Open `http://localhost:5173`. The backend listens at `http://localhost:3000`; verify it at `/api/health` and `/api/db-test`. A successful database test confirms connectivity only. Owner-scoped APIs also require `backend/migrations/003_user_record_ownership.sql`; review and back up the database before applying it as an administrator. The migration adds nullable ownership columns and leaves all existing records unowned and unchanged, so they remain hidden until an administrator confirms their owners. Never run the optional destructive migration `004_remove_unowned_demo_records.sql` without explicit approval.
+
 ## REST API
 
 All routes are prefixed with `/api`. Successful list/detail endpoints retain their JSON response shapes (for example `{ "outages": [...] }`). Write endpoints return JSON errors with appropriate HTTP status codes. Authenticated requests use a bearer token in the `Authorization` header.

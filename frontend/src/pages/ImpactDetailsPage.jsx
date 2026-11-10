@@ -97,7 +97,7 @@ export default function ImpactDetailsPage({ onRefreshState }) {
             <dl className="impact-facts">
               <div><dt>Impact ID</dt><dd>{impact.impactId}</dd></div>
               <div><dt>Outage ID</dt><dd>#{impact.outageId}</dd></div>
-              <div><dt>Service ID</dt><dd>#{impact.serviceId}</dd></div>
+              <div><dt>Affected service</dt><dd>{impact.serviceName || 'Service name not configured'}</dd></div>
               <div><dt>Impact level</dt><dd><SeverityBadge severity={impact.impactLevel} /></dd></div>
               <div><dt>Users affected</dt><dd>{numberFormatter.format(Number(impact.usersAffected) || 0)}</dd></div>
             </dl>

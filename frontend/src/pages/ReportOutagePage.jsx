@@ -225,7 +225,7 @@ export default function ReportOutagePage() {
               <select disabled={loading} name="serviceId" onChange={handleChange} value={values.serviceId}>
                 <option value="">No service impact recorded</option>
                 {services.map((service) => (
-                  <option key={service.serviceId} value={service.serviceId}>Service #{service.serviceId}</option>
+                  <option key={service.serviceId} value={service.serviceId}>{service.serviceName}</option>
                 ))}
               </select>
             </label>

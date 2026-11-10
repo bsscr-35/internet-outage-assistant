@@ -159,6 +159,7 @@ export default function RecoveryLogsPage({ onRefreshState }) {
                 <tr>
                   <th>RECOVERY</th>
                   <th>ACTION / OUTAGE</th>
+                  <th>AFFECTED SERVICES</th>
                   <th>ASSIGNED TECHNICIAN</th>
                   <th>STARTED</th>
                   <th>COMPLETED</th>
@@ -172,6 +173,7 @@ export default function RecoveryLogsPage({ onRefreshState }) {
                   <tr key={log.recoveryId}>
                     <td>#{log.recoveryId}</td>
                     <td><strong>{log.actionType || `Action #${log.actionId}`}</strong><small>Action #{log.actionId} · OUT-{String(log.outageId).padStart(4, '0')} · {log.componentName} · {log.locationName}, {log.region}</small></td>
+                    <td>{log.serviceNames?.join(', ') || 'No service impact recorded'}</td>
                     <td>{log.assignedTo || 'Unassigned'}</td>
                     <td>{formatDatabaseDateTime(log.startedAt)}</td>
                     <td>{formatDatabaseDateTime(log.completedAt)}</td>

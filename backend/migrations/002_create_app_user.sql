@@ -36,8 +36,6 @@ GRANT INSERT ON outage_assistant_demo.outage
   TO 'outage_assistant_app'@'localhost';
 GRANT INSERT ON outage_assistant_demo.outage_impact
   TO 'outage_assistant_app'@'localhost';
-GRANT INSERT ON outage_assistant_demo.recovery_status_audit
-  TO 'outage_assistant_app'@'localhost';
 GRANT INSERT ON outage_assistant_demo.recovery_log
   TO 'outage_assistant_app'@'localhost';
 

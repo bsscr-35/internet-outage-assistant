@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { getServiceName } = require('../services/serviceNames');
 const validImpactLevels = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']);
 
 async function getImpacts(req, res) {
@@ -7,6 +8,7 @@ async function getImpacts(req, res) {
       oi.ImpactID AS impactId,
       oi.OutageID AS outageId,
       s.ServiceID AS serviceId,
+      s.ServiceID AS serviceNameId,
       oi.ImpactLevel AS impactLevel,
       oi.UsersAffected AS usersAffected,
       oi.Description AS description,
@@ -27,7 +29,12 @@ async function getImpacts(req, res) {
     ORDER BY oi.ImpactID
   `, [req.user.userId]);
 
-  res.status(200).json({ impacts });
+  res.status(200).json({
+    impacts: impacts.map(({ serviceNameId, ...impact }) => ({
+      ...impact,
+      serviceName: getServiceName(serviceNameId),
+    })),
+  });
 }
 
 async function createOutageImpact(req, res) {
@@ -109,6 +116,7 @@ async function createOutageImpact(req, res) {
         impactId: result.insertId,
         outageId,
         serviceId,
+        serviceName: getServiceName(serviceId),
         impactLevel,
         usersAffected,
         description: description || null,

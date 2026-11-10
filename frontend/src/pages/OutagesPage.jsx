@@ -143,7 +143,7 @@ function OutageDetails({ outageId, onClose, refreshVersion }) {
                 {outage.impacts.map((impact) => (
                   <li key={impact.impactId}>
                     <div className="outage-related-meta">
-                      <strong>Service #{impact.serviceId}</strong>
+                      <strong>{impact.serviceName || 'Service name not configured'}</strong>
                       <SeverityBadge severity={impact.impactLevel} />
                     </div>
                     <p>{impact.description || 'No description recorded.'}</p>

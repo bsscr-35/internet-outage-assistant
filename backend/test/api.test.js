@@ -13,6 +13,7 @@ const {
   verifyPassword,
   verifyToken,
 } = require('../services/authService');
+const { getServiceName, getServiceNames } = require('../services/serviceNames');
 const pool = require('../config/db');
 
 let server;
@@ -65,6 +66,19 @@ test('health endpoint reports API status without database status fields', async 
   assert.equal(response.status, 200);
   assert.equal(body.status, 'ok');
   assert.equal(Object.hasOwn(body, 'mongoStatus'), false);
+});
+
+test('service labels are readable and do not expose internal IDs', () => {
+  const expectedNames = [
+    'Internet connectivity',
+    'Domain Name System (DNS)',
+    'Email',
+    'Web applications',
+    'Voice over IP (VoIP)',
+  ];
+  assert.deepEqual(getServiceNames('1,2,3,4,5'), expectedNames);
+  assert.equal(getServiceName(99), 'Service name not configured');
+  assert.ok(expectedNames.every((name) => !name.includes('#')));
 });
 
 test('global API rate limit allows normal polling traffic beyond 100 requests', async () => {
@@ -163,7 +177,10 @@ test('joined endpoints and aggregates remain consistent with the same MySQL reco
   const outageById = new Map(outages.outages.map((row) => [Number(row.outageId), row]));
   const componentById = new Map(components.components.map((row) => [Number(row.componentId), row]));
   const locationById = new Map(locations.locations.map((row) => [Number(row.locationId), row]));
-  const serviceIds = new Set((await (await request('/services')).json()).services.map((row) => Number(row.serviceId)));
+  const serviceRows = (await (await request('/services')).json()).services;
+  const serviceNames = new Map(serviceRows.map((row) => [Number(row.serviceId), row.serviceName]));
+  const serviceIds = new Set(serviceNames.keys());
+  assert.ok(serviceRows.every((service) => service.serviceName && !service.serviceName.includes('#')));
   const actionById = new Map(actions.actions.map((row) => [Number(row.actionId), row]));
 
   for (const outage of outages.outages) {
@@ -181,15 +198,19 @@ test('joined endpoints and aggregates remain consistent with the same MySQL reco
     assert.equal(impact.componentName, outage.componentName);
     assert.equal(impact.locationName, outage.locationName);
     assert.equal(impact.outageStatus, outage.status);
+    assert.equal(impact.serviceName, serviceNames.get(Number(impact.serviceId)));
+    assert.ok(outage.serviceNames.includes(impact.serviceName));
   }
   for (const action of actions.actions) {
     assert.ok(outageById.has(Number(action.outageId)), `action ${action.actionId} references an existing outage`);
+    assert.deepEqual(action.serviceNames, outageById.get(Number(action.outageId)).serviceNames);
   }
   for (const log of logs.logs) {
     const action = actionById.get(Number(log.actionId));
     assert.ok(action, `recovery log ${log.recoveryId} references an existing action`);
     assert.equal(Number(log.outageId), Number(action.outageId));
     assert.equal(log.actionStatus, action.status);
+    assert.deepEqual(log.serviceNames, outageById.get(Number(log.outageId)).serviceNames);
   }
   for (const verification of verifications.verifications) {
     const outage = outageById.get(Number(verification.outageId));
@@ -200,6 +221,9 @@ test('joined endpoints and aggregates remain consistent with the same MySQL reco
       .filter((impact) => Number(impact.outageId) === Number(verification.outageId))
       .map((impact) => Number(impact.serviceId)));
     assert.ok(verification.serviceIds.every((id) => impactedServiceIds.has(Number(id))));
+    assert.deepEqual(verification.serviceNames, [...new Set(verification.serviceIds)]
+      .sort((a, b) => a - b)
+      .map((id) => serviceNames.get(Number(id))));
   }
 
   assert.equal(Number(dashboard.stats.totalOutages), outages.outages.length);
@@ -218,6 +242,7 @@ test('joined endpoints and aggregates remain consistent with the same MySQL reco
     assert.equal(Number(incident.impactCount), impacts.impacts.filter(
       (impact) => Number(impact.outageId) === Number(incident.outageId),
     ).length);
+    assert.deepEqual(incident.serviceNames, outage.serviceNames);
     assert.equal(Number(incident.recoveryActionCount), actions.actions.filter(
       (action) => Number(action.outageId) === Number(incident.outageId),
     ).length);
@@ -336,7 +361,7 @@ test('recovery action creation does not disclose or modify another user outage',
   const originalExecute = pool.execute;
   let insertAttempted = false;
   pool.execute = async (sql, params = []) => {
-    if (sql.includes('FROM outage WHERE OutageID')) {
+    if (sql.includes('FROM outage') && sql.includes('WHERE OutageID')) {
       assert.deepEqual(params, [71, 2]);
       return [[], []];
     }
@@ -1031,6 +1056,46 @@ test('recovery status update for a missing action returns 404 without changing r
     body: JSON.stringify({ status: 'IN_PROGRESS', remarks: 'Validation-only request' }),
   });
   assert.equal(response.status, 404);
+});
+
+test('recovery status changes rely on the database trigger for audit records', async () => {
+  const statements = [];
+  let commits = 0;
+  const connection = {
+    beginTransaction: async () => {},
+    execute: async (sql, params = []) => {
+      const statement = sql.replace(/\s+/g, ' ').trim();
+      statements.push({ statement, params });
+      if (statement.includes('SELECT ra.Status')) return [[{ Status: 'PENDING' }], []];
+      if (statement.startsWith('UPDATE recovery_action')) return [{ affectedRows: 1 }, []];
+      if (statement.startsWith('INSERT INTO recovery_log')) return [{ insertId: 81 }, []];
+      assert.fail(`Unexpected SQL in recovery audit test: ${statement}`);
+    },
+    commit: async () => { commits += 1 },
+    rollback: async () => {},
+    release: () => {},
+  };
+  const originalGetConnection = pool.getConnection;
+  pool.getConnection = async () => connection;
+
+  try {
+    const response = await request('/recovery-actions/9/status', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'IN_PROGRESS', remarks: 'Started recovery' }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(commits, 1);
+    assert.equal(statements.filter(({ statement }) => statement.startsWith('UPDATE recovery_action')).length, 1);
+    assert.equal(statements.filter(({ statement }) => statement.startsWith('INSERT INTO recovery_log')).length, 1);
+    assert.equal(
+      statements.some(({ statement }) => statement.startsWith('INSERT INTO recovery_status_audit')),
+      false,
+    );
+  } finally {
+    pool.getConnection = originalGetConnection;
+  }
 });
 
 test('removed diagnostic endpoints return 404', async () => {

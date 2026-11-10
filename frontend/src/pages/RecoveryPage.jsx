@@ -247,7 +247,7 @@ export default function RecoveryPage({ onRefreshState }) {
             >
               {(data?.outages || []).map((outage) => (
                 <option key={outage.outageId} value={outage.outageId}>
-                  {`OUT-${String(outage.outageId).padStart(4, '0')} · ${outage.status} · ${outage.componentName}`}
+                  {`OUT-${String(outage.outageId).padStart(4, '0')} · ${outage.status} · ${outage.componentName} · ${outage.serviceNames?.join(', ') || 'No service impact recorded'}`}
                 </option>
               ))}
             </select>
@@ -366,6 +366,7 @@ export default function RecoveryPage({ onRefreshState }) {
                   <div className="operations-record-meta">
                     <SeverityBadge severity={action.priority} />
                     <span>Recommended {formatDatabaseDateTime(action.recommendedAt)}</span>
+                    <span>{action.serviceNames?.join(', ') || 'No service impact recorded'}</span>
                   </div>
                   <button
                     aria-pressed={selectedAction?.actionId === action.actionId}
@@ -406,6 +407,7 @@ export default function RecoveryPage({ onRefreshState }) {
                   <div><dt>Outage ID</dt><dd>#{selectedAction.outageId}</dd></div>
                   <div><dt>Priority</dt><dd><SeverityBadge severity={selectedAction.priority} /></dd></div>
                   <div><dt>Recommended</dt><dd>{formatDatabaseDateTime(selectedAction.recommendedAt)}</dd></div>
+                  <div><dt>Affected services</dt><dd>{selectedAction.serviceNames?.join(', ') || 'No service impact recorded'}</dd></div>
                 </dl>
               </div>
               <div className="operations-related">

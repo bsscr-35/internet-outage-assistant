@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { getServiceNames } = require('../services/serviceNames');
 
 async function getServiceVerifications(req, res) {
   const [verifications] = await pool.execute(`
@@ -35,6 +36,7 @@ async function getServiceVerifications(req, res) {
       serviceIds: verification.serviceIds
         ? verification.serviceIds.split(',').map(Number)
         : [],
+      serviceNames: getServiceNames(verification.serviceIds),
     })),
   });
 }

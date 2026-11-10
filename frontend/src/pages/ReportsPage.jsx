@@ -26,15 +26,15 @@ function escapeCsv(value) {
 
 function downloadCsv(report) {
   const rows = [
-    ['Section', 'Metric', 'Value', 'Region', 'Outages', 'Affected Users'],
-    ['Summary', 'Total outages', report.totalOutages, '', '', ''],
-    ['Summary', 'Affected users', report.totalAffectedUsers, '', '', ''],
-    ['Summary', 'Recovery actions', report.totalRecoveryActions, '', '', ''],
-    ['Summary', 'Recovery logs', report.summary.totalRecoveryLogs, '', '', ''],
-    ['Summary', 'Completed recovery actions', report.summary.completedRecoveryActions, '', '', ''],
-    ['Summary', 'Recovery actions in progress', report.summary.inProgressRecoveryActions, '', '', ''],
-    ...report.severityDistribution.map(({ severity, count }) => ['Severity', severity, count, '', '', '']),
-    ...report.recoverySummary.map(({ status, count }) => ['Recovery status', status, count, '', '', '']),
+    ['Section', 'Metric', 'Value', 'Region', 'Outages', 'Affected Users', 'Affected Services'],
+    ['Summary', 'Total outages', report.totalOutages, '', '', '', ''],
+    ['Summary', 'Affected users', report.totalAffectedUsers, '', '', '', ''],
+    ['Summary', 'Recovery actions', report.totalRecoveryActions, '', '', '', ''],
+    ['Summary', 'Recovery logs', report.summary.totalRecoveryLogs, '', '', '', ''],
+    ['Summary', 'Completed recovery actions', report.summary.completedRecoveryActions, '', '', '', ''],
+    ['Summary', 'Recovery actions in progress', report.summary.inProgressRecoveryActions, '', '', '', ''],
+    ...report.severityDistribution.map(({ severity, count }) => ['Severity', severity, count, '', '', '', '']),
+    ...report.recoverySummary.map(({ status, count }) => ['Recovery status', status, count, '', '', '', '']),
     ...report.locationSummary.map(({ locationName, region, outageCount, affectedUsers }) => [
       'Location',
       locationName,
@@ -42,6 +42,7 @@ function downloadCsv(report) {
       region,
       outageCount,
       affectedUsers,
+      '',
     ]),
     ...report.incidents.map((incident) => [
       'Incident',
@@ -50,6 +51,7 @@ function downloadCsv(report) {
       `${incident.locationName}, ${incident.region}`,
       incident.impactCount,
       `${incident.latestServiceStatus || 'No check'} / ${incident.latestConnectivityStatus || 'No check'}`,
+      incident.serviceNames.join(', '),
     ]),
   ]
   const csv = rows.map((row) => row.map(escapeCsv).join(',')).join('\r\n')
@@ -292,6 +294,7 @@ export default function ReportsPage({ onRefreshState }) {
                       <th>COMPONENT / LOCATION</th>
                       <th>STATUS / SEVERITY</th>
                       <th>IMPACTS</th>
+                      <th>AFFECTED SERVICES</th>
                       <th>RECOVERY</th>
                       <th>LATEST CHECK</th>
                     </tr>
@@ -303,6 +306,7 @@ export default function ReportsPage({ onRefreshState }) {
                         <td>{incident.componentName}<br />{incident.locationName}, {incident.region}</td>
                         <td><StatusBadge status={incident.status} /> <SeverityBadge severity={incident.severity} /></td>
                         <td>{incident.impactCount}</td>
+                        <td>{incident.serviceNames.join(', ') || 'No service impact recorded'}</td>
                         <td>{incident.completedRecoveryActionCount}/{incident.recoveryActionCount} completed</td>
                         <td>{incident.latestServiceStatus && incident.latestConnectivityStatus
                           ? `${incident.latestServiceStatus} / ${incident.latestConnectivityStatus}`
